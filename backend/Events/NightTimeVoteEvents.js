@@ -33,9 +33,7 @@ exports.loadNightTimeEvents = (io, socket, mafiaGame) => {
      * Handler for detective vote. Retrieves the player specified in the message, checks their role, and replies with a
      * SuspectRevealDTO that reveals whether the chosen player is Mafia or not.
      */
-    socket.on('detective-vote', (detectiveVoteObj) => {
-        //console.log(socket.player);
-        
+    socket.on('detective-vote', (detectiveVoteObj) => { 
         const room = mafiaGame.gameRoomsDict[socket.player.roomID];
         const suspect = room.getPlayerByNickname(detectiveVoteObj.votingFor);
         socket.emit(

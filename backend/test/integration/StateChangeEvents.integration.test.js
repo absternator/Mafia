@@ -29,7 +29,6 @@ afterAll(() => {
     SocketIOServer.server.close();
 });
 
-/** -----------------TESTS------------------*/
 describe('NightStateChangeEvents integration tests', () => {
     test('integration test start-night 6 players', async (done) => {
         // Start the night
@@ -53,7 +52,6 @@ describe('NightStateChangeEvents integration tests', () => {
                         socketResponseCount++;
                         if (socketResponseCount >= 12) {
                             resolve();
-                            console.log('what');
                         }
                     });
                 }

@@ -54,7 +54,6 @@ describe('day & trial vote integration tests', () => {
     async function voting(index) {
         return new Promise((resolve) => {
             clientSockets[0].on('day-vote-update', (listVoteDTO) => {
-                
                 resolve(listVoteDTO.voteMap[`Leon${index}`]);
             });
             // send votes to server
