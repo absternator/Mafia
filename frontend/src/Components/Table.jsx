@@ -2,6 +2,10 @@ import React, { useRef, useEffect, useState, useContext } from 'react';
 import Player from './Player';
 import styles from '../Styles/Table.module.css';
 import { GeneralContext } from '../App';
+import { GameContext } from '../Pages/GamePage';
+import { Button } from '@material-ui/core';
+import socket from '../Socket';
+import classNames from 'classnames';
 
 /**
  *
@@ -9,12 +13,17 @@ import { GeneralContext } from '../App';
  *
  */
 export default function Table() {
-    const { state } = useContext(GeneralContext);
-    const playerStates = state.players.map((p) => {
-        return {
-            playerId: p,
-            name: p,
-        };
+    const { state: generalState } = useContext(GeneralContext);
+    const { state: gameState, dispatch } = useContext(GameContext);
+
+    const isNight = gameState.dayPeriod === 'Night';
+    const amIDead = !gameState.alivePlayers.includes(generalState.nickname);
+
+    // apply styles based on whether certain props is true
+    const tableWrapperStyle = classNames({
+        [styles.tableWrapper]: true,
+        [styles.day]: !isNight,
+        [styles.night]: isNight,
     });
 
     // used to keep reference to table dom element (to get width/height of it)
@@ -27,18 +36,32 @@ export default function Table() {
     // we need to keep track of px values of all players
     const [playerCoords, setPlayerCoords] = useState(initCoords());
 
+    useEffect(() => {
+        setPlayerCoords((prevState) =>
+            prevState.map((p) => ({
+                ...p,
+                onTrial:
+                    gameState.votingState.type === 'trial' && gameState.votingState.votablePlayers.includes(p.name),
+            }))
+        );
+    }, [gameState.votingState]);
+
     // initially, just put everyone at 0,0
     function initCoords() {
-        const numPlayers = playerStates.length;
+        const numPlayers = generalState.players.length;
 
         const angleBetweenPlayers = 360 / numPlayers;
 
-        return playerStates.map((player, idx) => ({
-            playerId: player.playerId,
-            top: 0,
-            left: 0,
-            angle: idx * angleBetweenPlayers,
-        }));
+        return generalState.players.map((player, idx) => {
+            return {
+                playerId: player,
+                name: player,
+                top: 0,
+                left: 0,
+                angle: idx * angleBetweenPlayers,
+                onTrial: false,
+            };
+        });
     }
 
     function getDimensions(ref) {
@@ -85,7 +108,9 @@ export default function Table() {
         if (tableRef.current) {
             const newCoords = playerCoords.map((player) => ({
                 playerId: player.playerId,
+                name: player.name,
                 angle: player.angle,
+                onTrial: player.onTrial,
                 ...computeCoordinates(player.angle),
             }));
             setPlayerCoords(newCoords);
@@ -102,6 +127,11 @@ export default function Table() {
                 fn.apply(this, arguments);
             }, ms);
         };
+    }
+
+    function abstainHandler() {
+        socket.emit(`trial-vote`, { votingFor: `abstain Vote` });
+        dispatch({ type: 'show-selected', status: `Voted to Abstain` });
     }
 
     useEffect(() => {
@@ -121,23 +151,48 @@ export default function Table() {
     });
 
     return (
-        <div className={styles.tableWrapper}>
+        <div className={tableWrapperStyle}>
             <div className={styles.table} ref={tableRef}>
-                {playerCoords.map((p) => {
-                    const { playerId, top, left } = p;
+                {playerCoords
+                    .filter((p) => !p.onTrial)
+                    .map((p) => {
+                        const { playerId, name, top, left } = p;
 
-                    const { name: playerName } = playerStates.find((p) => p.playerId === playerId);
+                        return (
+                            <Player
+                                key={playerId}
+                                playerId={playerId}
+                                playerName={name}
+                                childRef={playerRef}
+                                style={{ top, left, position: 'absolute' }}
+                            />
+                        );
+                    })}
 
-                    return (
-                        <Player
-                            key={playerId}
-                            playerId={playerId}
-                            playerName={playerName}
-                            childRef={playerRef}
-                            style={{ top, left, position: 'absolute' }}
-                        />
-                    );
-                })}
+                <div className={styles.trialBox}>
+                    {playerCoords
+                        .filter((p) => p.onTrial)
+                        .map((p) => {
+                            const { playerId, name } = p;
+
+                            return (
+                                <>
+                                    <Player key={playerId} playerId={playerId} playerName={name} childRef={playerRef} />{' '}
+                                    <Button
+                                        onClick={() => {
+                                            abstainHandler();
+                                        }}
+                                        style={{
+                                            visibility: (gameState.phase !== 'trial-start' || amIDead) && 'hidden',
+                                        }}
+                                        variant="contained"
+                                    >
+                                        Abstain
+                                    </Button>
+                                </>
+                            );
+                        })}
+                </div>
             </div>
             <div className={styles.overlay}></div>
         </div>

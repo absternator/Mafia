@@ -5,7 +5,7 @@ import socket from '../Socket';
 
 const initialState = {
     screen: 'entry',
-    dayPeriod: 'day', // night or day
+    dayPeriod: 'Day', // night or day
     dayNumber: 1, // what day it is
     alivePlayers: [],
     status: '',
@@ -13,6 +13,8 @@ const initialState = {
     winners: [],
     phase: '',
     role: '',
+    amIDead: false,
+    checkedPlayers: [],
     votingState: {
         type: '', // role or discussion or trial or undefined
         votablePlayers: [], // what other players can we vote for
@@ -41,7 +43,7 @@ const reducer = (state, action) => {
                 ...state,
                 phase: 'night-start',
                 status: action.status,
-                dayPeriod: 'night',
+                dayPeriod: 'Night',
                 screen: 'core',
                 votingState: {
                     ...state.votingState,
@@ -49,6 +51,22 @@ const reducer = (state, action) => {
                     votablePlayers: [...action.votablePlayers],
                     timeToVote: action.timeToVote,
                 },
+            };
+        }
+
+        case 'show-selected': {
+            return {
+                ...state,
+                status: action.status,
+                votingState: { ...state.votingState, vote: action.votedPlayer },
+            };
+        }
+
+        case 'abstain': {
+            return {
+                ...state,
+                status: action.status,
+                votingState: { ...state.votingState, vote: '' },
             };
         }
 
@@ -68,7 +86,7 @@ const reducer = (state, action) => {
             return {
                 ...state,
                 phase: 'day-start',
-                dayPeriod: 'day',
+                dayPeriod: 'Day',
                 dayNumber: state.dayNumber + 1,
                 status: action.status,
                 votingState: {
@@ -122,6 +140,7 @@ const reducer = (state, action) => {
             return {
                 ...state,
                 phase: 'game-over',
+                screen: 'end',
                 status: `${action.winningRole} wins!`,
                 winningRole: action.winningRole,
                 winners: [...action.winners],
@@ -142,6 +161,16 @@ const reducer = (state, action) => {
             return {
                 ...state,
                 checkedPlayers: [...state.checkedPlayers, action.checkedPlayer],
+            };
+        }
+
+        case 'skip-trial': {
+            return {
+                ...state,
+                status: action.status,
+                votingState: {
+                    ...initialState.votingState,
+                },
             };
         }
 
@@ -172,6 +201,17 @@ export default function useGameState() {
 
     useEffect(() => {
         function onNightStart({ timeToVote }) {
+            const amIDead = !state.alivePlayers.includes(generalState.nickname);
+            if (amIDead) {
+                dispatch({
+                    type: 'night-start',
+                    status: 'You are dead',
+                    votablePlayers: [],
+                    timeToVote,
+                });
+                return;
+            }
+
             const { role } = generalState;
 
             const status = nightTimeStatus[role];
@@ -186,6 +226,7 @@ export default function useGameState() {
                 ),
                 medic: state.alivePlayers,
                 civilian: [],
+                jester: [], // TODO CHANGED
             }[role];
 
             dispatch({
@@ -196,48 +237,77 @@ export default function useGameState() {
             });
         }
 
-        function onNightEnd({ playerKilled }) {
+        function onNightEnd({ playerKilled, isGameOver }) {
             dispatch({
                 type: 'night-end',
-                status: `${playerKilled} was killed in the night`,
+                status: playerKilled ? `${playerKilled} was killed in the night...` : `Nobody died in the night!`,
                 playerKilled,
             });
+
+            if (!isGameOver) {
+                generalState.isHost && setTimeout(() => socket.emit('start-day'), 2000);
+            }
         }
 
         function onDayStart({ timeToVote }) {
+            const amIDead = !state.alivePlayers.includes(generalState.nickname);
             dispatch({
                 type: 'day-start',
-                status: 'Please vote for someone',
+                status: amIDead ? 'You are dead' : 'Select someone to be on trial',
                 votablePlayers: state.alivePlayers.filter((p) => p !== generalState.nickname),
                 timeToVote,
             });
         }
 
-        function onDiscussionEnd({ playersOnTrial }) {
+        function onDiscussionEnd({ playerOnTrial }) {
+            if (playerOnTrial === null) {
+                dispatch({
+                    type: 'skip-trial',
+                    status: 'No one is on trial',
+                });
+
+                generalState.isHost && setTimeout(() => socket.emit('start-night'), 2000); // TODO CHANGED
+                return;
+            }
+
             dispatch({
                 type: 'discussion-end',
-                status: constructPlayersOnTrialStatus(playersOnTrial),
-                votablePlayers: !playersOnTrial.includes(generalState.nickname) ? playersOnTrial : [],
+                status: constructPlayersOnTrialStatus(playerOnTrial),
+                votablePlayers: playerOnTrial !== generalState.nickname ? [playerOnTrial] : [],
             });
+
+            generalState.isHost && setTimeout(() => socket.emit('start-trial'), 2000); // TODO CHANGED
         }
 
         function onTrialStart({ timeToVote }) {
+            const amIDead = !state.alivePlayers.includes(generalState.nickname);
             dispatch({
                 type: 'trial-start',
-                status: state.votingState.votablePlayers.length ? 'Please vote for someone' : 'You are on trial',
+                status: amIDead
+                    ? 'You are dead'
+                    : state.votingState.votablePlayers.length
+                    ? 'Vote for the player on trial to kill them'
+                    : 'You are on trial',
                 timeToVote,
             });
         }
 
-        function onTrialEnd({ playerKilled }) {
+        function onTrialEnd({ playerKilled, isGameOver }) {
             dispatch({
                 type: 'trial-end',
-                status: `${playerKilled} was hanged`, // TODO if playerKilled === null
+                status:
+                    playerKilled === 'abstain Vote' || !playerKilled
+                        ? `Nobody was killed in the Trial!`
+                        : `The town voted to kill ${playerKilled}!`,
                 playerKilled,
             });
+            if (!isGameOver) {
+                generalState.isHost && setTimeout(() => socket.emit('start-night'), 2000); // TODO CHANGED
+            }
         }
 
         function onGameOver({ winningRole, winners }) {
+            console.log(winningRole + ' ' + winners);
             dispatch({
                 type: 'game-over',
                 winningRole: winningRole.toLowerCase(),
@@ -288,5 +358,5 @@ export default function useGameState() {
         };
     }, [state, generalState]);
 
-    return state;
+    return [state, dispatch];
 }
