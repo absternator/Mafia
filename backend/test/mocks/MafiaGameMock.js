@@ -1,5 +1,4 @@
 const config = require('../../config.json');
-
 const loadLobbyEvents = require('../../Events/LobbyEvents');
 const loadVoteEvents = require('../../Events/VoteEvents');
 const loadGameStartEvents = require('../../Events/GameStartEvents');
@@ -21,11 +20,16 @@ const io = require('socket.io')(server, {
 let mafiaGame = null;
 let testPlayerSocket;
 
-module.exports.createMafiaGameWithOnePlayerMock = function (port) {
+/**
+ * This is a mock of a MafiaGame, which will help us write unit tests without setting up the MafiaGame itself.
+ * It will create a new game with a new room, and open a websocket server over Express.
+ * Room elements will be useful elements that unit tests can access to, e.g. the random roomID created for the mock MafiaGame.
+ */
+function createMafiaGameWithOnePlayerMock(port) {
     mafiaGame = new MafiaGame();
     const roomID = mafiaGame.newGame();
     mafiaGame.gameRoomsDict[roomID] = new Room();
-    const hostPlayer = new Player(null, roomID, 'a', 'mafia', true);
+    const hostPlayer = new Player(null, roomID, 'mafiaPlayer', 'mafia', true);
 
     io.on('connection', (socket) => {
         loadLobbyEvents(io, socket, mafiaGame);
@@ -44,30 +48,68 @@ module.exports.createMafiaGameWithOnePlayerMock = function (port) {
         });
     });
 
-    return { io: io, mafiaGame: mafiaGame, socketIOServer: server, roomID: roomID, hostPlayer: hostPlayer };
-};
+    return { io, mafiaGame, socketIOServer: server, roomID, hostPlayer };
+}
 
-module.exports.addPlayer = function (player, roomID) {
-    room = mafiaGame.gameRoomsDict[roomID];
+function addPlayer(player, roomID) {
+    let room = mafiaGame.gameRoomsDict[roomID];
 
     room.addPlayer(player);
-};
+}
 
-module.exports.addMafiaVote = function (voter, votedFor, roomID) {
+function addPlayers(players, roomID) {
+    const room = mafiaGame.gameRoomsDict[roomID];
+    for (let player of players) {
+        room.addPlayer(player);
+    }
+}
+
+function addMafiaVote(voter, votedFor, roomID) {
     const room = mafiaGame.gameRoomsDict[roomID];
     const { mafiaVoteMap } = room.voteHandler;
 
-    mafiaVoteMap[voter] = votedFor;
-};
+    mafiaVoteMap[voter.nickname] = votedFor;
+}
 
-module.exports.addPlayers = function (players, roomID) {
+function addDayVote(voter, votedFor, roomID) {
     const room = mafiaGame.gameRoomsDict[roomID];
-    for (player of players) {
-        room.addPlayer(player);
-    }
-};
+    const { daytimeVoteMap } = room.voteHandler;
 
-module.exports.switchPlayer = function (nickname, roomID) {
+    daytimeVoteMap[voter.nickname] = votedFor;
+}
+
+function addTrialVote(voter, votedFor, roomID) {
+    const room = mafiaGame.gameRoomsDict[roomID];
+    const { trialVoteMap } = room.voteHandler;
+
+    trialVoteMap[voter.nickname] = votedFor;
+}
+
+/**
+ * Switch the current player (socket.player)
+ * @param {*} nickname
+ * @param {*} roomID
+ */
+function switchPlayer(nickname, roomID) {
     const room = mafiaGame.gameRoomsDict[roomID];
     testPlayerSocket.player = room.getPlayerByNickname(nickname);
+}
+
+function resetRoom(roomID) {
+    const room = mafiaGame.gameRoomsDict[roomID];
+    room.resetGame();
+    room.players = [];
+    room.host = null;
+    room.voteHandler.resetVotes();
+}
+
+module.exports = {
+    createMafiaGameWithOnePlayerMock,
+    addPlayer,
+    addPlayers,
+    addMafiaVote,
+    addDayVote,
+    addTrialVote,
+    switchPlayer,
+    resetRoom,
 };

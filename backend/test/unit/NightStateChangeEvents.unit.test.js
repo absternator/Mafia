@@ -18,7 +18,7 @@ describe('start-night unit tests', () => {
     // Disconnect each socket connected to the server
     afterEach((done) => {
         const { sockets } = roomElements.io.sockets;
-        sockets.forEach((socket, key) => {
+        sockets.forEach((socket) => {
             socket.disconnect(true);
         });
 
@@ -31,25 +31,20 @@ describe('start-night unit tests', () => {
     });
 
     test('start-night successful call, no one is killed', (done) => {
-        // jest.useFakeTimers();
-
+        // Register mock event handlers for the events that the backend emits - assertions for the DTOs
         clientSocket.on('night-start', (nightStartDTO) => {
             expect(nightStartDTO.timeToVote).toBeDefined();
-            // jest.runTimersToTime(6000);
-            // jest.runAllTimers();
         });
-
         clientSocket.on('night-end', (nightEndDTO) => {
             expect(nightEndDTO.playerKilled).toBeNull();
             done();
         });
 
+        // Imitate the start of the night
         clientSocket.emit('start-night');
     });
 
     test('start-night successful call, someone is killed', (done) => {
-        // jest.useFakeTimers();
-
         const playerA = new Player(null, null, 'a', roles.MAFIA, true);
         const playerB = new Player(null, null, 'a', roles.MAFIA, true);
 
@@ -58,18 +53,16 @@ describe('start-night unit tests', () => {
 
         MafiaGameMock.addMafiaVote(playerA, playerB, roomElements.roomID);
 
+        // Register mock event handlers for the events that the backend emits - assertions for the DTOs
         clientSocket.on('night-start', (nightStartDTO) => {
             expect(nightStartDTO.timeToVote).toBeDefined();
-            // jest.runTimersToTime(6000);
-            // jest.runAllTimers();
-            // jest.runOnlyPendingTimers();
         });
-
         clientSocket.on('night-end', (nightEndDTO) => {
             expect(nightEndDTO.playerKilled).toBeDefined();
             done();
         });
 
+        // Imitate the start of the night
         clientSocket.emit('start-night');
     });
 });
